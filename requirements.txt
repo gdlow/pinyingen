@@ -1,0 +1,4 @@
+fpdf==1.7.2
+jieba==0.42.1
+pdftotext==2.1.4
+xpinyin==0.5.6

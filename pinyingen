@@ -1,0 +1,117 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
+import argparse
+import re
+import jieba
+import pdftotext
+from xpinyin import Pinyin
+from fpdf import FPDF
+
+
+class PinyinGenerator:
+    """Provides methods for converting an ebook with chinese chars
+    into an annotated one with pinyin."""
+    def __init__(self):
+        # Metadata related to file parsing
+        self.pdf_writer = FPDF()
+        self.pinyin = Pinyin()
+        self.pdf = None
+        self.file_loaded = False
+        # Other metadata related to printing
+        self.max_width = 190
+        self.hanzi_size = 11.5
+        self.pinyin_size = 6.5
+        
+    def load_file(self, read_filepath):
+        """Loads a file specified in read_filepath into memory"""
+        with open(read_filepath, "rb") as f:
+            self.pdf = pdftotext.PDF(f)
+        self.file_loaded = True
+
+    def convert(self, write_filepath, start_page = 0, end_page = -1):
+        """Converts the PDF document loaded and outputs it into write_filepath"""
+        
+        self.pdf_writer.add_font('fireflysung', '',
+                                 'fireflysung-1.3.0/fireflysung.ttf', uni=True)
+        end_page = len(self.pdf) if end_page == -1 else end_page
+        for page_num in range(start_page, end_page):
+            page = self.pdf[page_num]
+            self.pdf_writer.add_page()
+            for sentence in page.split('\n'):
+                hanzi, pinyin = self.pinyinedLists(sentence)
+                overflow = True
+                while (overflow):
+                    overflow, hanzi, pinyin = self.writeSentence(hanzi, pinyin)
+        self.pdf_writer.output(write_filepath)
+        
+    def writeSentence(self, hanzi, pinyin):
+        """Writes a sentence with hanzi and pinyin.
+        Returns whether or not the line has overflowed,
+        as well as the remaining hanzi and pinyin."""
+
+        overflow = False
+        ohanzi, opinyin = [], []
+
+        # Write hanzi
+        wordLens = []
+        accumulated = 0
+        self.pdf_writer.set_font('fireflysung', '', self.hanzi_size)
+        for i, word in enumerate(hanzi):
+            if re.search(r'[\u4e00-\u9fff]+', word):
+                wordLen = max(self.pdf_writer.get_string_width(word),
+                              0.75*self.pdf_writer.get_string_width(pinyin[i]))
+                self.pdf_writer.cell(wordLen, 6, txt=word, ln=0, align='c')
+            else:
+                wordLen = self.pdf_writer.get_string_width(word)
+                self.pdf_writer.cell(wordLen, 6, txt=word, ln=0, align='c')
+            wordLens.append(wordLen)
+            accumulated += wordLen
+            if accumulated >= self.max_width:
+                overflow = True
+                ohanzi = [hanzi[j] for j in range(i+1, len(hanzi))]
+                break;
+        self.pdf_writer.cell(1, 2, txt='', ln=1) # new line
+
+        # Write pinyin
+        accumulated = 0
+        self.pdf_writer.set_font('fireflysung', '', 7)
+        for i in range(len(pinyin)):
+            word = pinyin[i]
+            wordLen = wordLens[i]
+            self.pdf_writer.cell(wordLen, 10, txt=word, ln=0, align='c')
+            accumulated += wordLen
+            if accumulated >= self.max_width:
+                overflow = True
+                opinyin = [pinyin[j] for j in range(i+1, len(pinyin))]
+                break
+        self.pdf_writer.cell(1, self.pinyin_size, txt='', ln=1) # new line
+
+        return overflow, ohanzi, opinyin
+
+    def pinyinedLists(self, sentence):
+        """Cuts the sentence specified by each phrase and annotates with pinyin"""
+        segments = jieba.cut(sentence)
+        output = " ".join(segments)
+        pinyined = self.pinyin.get_pinyin(output, splitter='', tone_marks='marks')
+
+        output = output.split()
+        pinyined = pinyined.split()
+
+        for i in range(len(output)):
+            if not re.search(r'[\u4e00-\u9fff]+', output[i]):
+                pinyined[i] = ' '
+        return output, pinyined
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser(prog='pinyingen.py')
+	parser.add_argument('-i', '--input', required=True, help='Input PDF', metavar='')
+	parser.add_argument('-o', '--output', default='sample.pdf', help='Output filename (PDF format)', metavar='')
+	parser.add_argument('-s', '--start', type=int, default=0, help='Page start', metavar='')
+	parser.add_argument('-e', '--end', type=int, default=-1, help='Page end', metavar='')
+	args = parser.parse_args()
+	filepath = os.path.realpath(args.input)
+	pg = PinyinGenerator()
+	pg.load_file(filepath)
+	pg.convert(args.output, args.start, args.end)

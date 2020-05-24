@@ -1,0 +1,7 @@
+.*
+!.gitignore
+!.clang-format
+HELPME.md
+prototype_pinyin.ipynb
+prototype_pinyin2.ipynb
+*.pdf
